@@ -7,6 +7,7 @@ import (
 	"github.com/diskfs/go-diskfs/disk"
 	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/diskfs/go-diskfs/partition/mbr"
+	gzip "github.com/klauspost/pgzip"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,8 +19,10 @@ func main() {
 	partitionMB := flag.Int("size", 1024, "partition size in megabytes")
 	label := flag.String("label", "boot", "volume label")
 	force := flag.Bool("force", false, "force overwrite if output path exists")
+	doGzip := flag.Bool("gzip", false, "compress output file with gzip")
 	flag.Parse()
 
+	// Delete the output file if it exists already and -force was specified
 	if _, err := os.Stat(*outputPath); err == nil {
 		if !*force {
 			fmt.Fprintf(os.Stderr, "Output path '%s' exists, remove it or use --force to overwrite\n", *outputPath)
@@ -27,7 +30,41 @@ func main() {
 		}
 		os.Remove(*outputPath)
 	}
-	createDiskImage(*partitionMB, *outputPath, *label, flag.Args())
+
+	// Package everything into an EFI partition
+	err := createDiskImage(*partitionMB, *outputPath, *label, flag.Args())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating disk image: %s\n", err.Error())
+		os.Exit(1)
+	}
+
+	// Optionally compress the output
+	if *doGzip {
+		fmt.Fprintf(os.Stderr, "Compressing %s ... \n", *outputPath)
+		err = compressOutput(outputPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error compressing output: %s\n", err.Error())
+			os.Exit(1)
+		}
+	}
+}
+
+func compressOutput(outputPath *string) error {
+	gzipFilename := fmt.Sprintf("%s.gz", *outputPath)
+	gzipFile, err := os.Create(gzipFilename)
+	if err != nil {
+		panic(err)
+	}
+	reader, err := os.Open(*outputPath)
+	defer reader.Close()
+	w := gzip.NewWriter(gzipFile)
+	//w.SetConcurrency(100000, 10)
+	_, err = io.Copy(w, reader)
+	err2 := w.Close()
+	if err != nil {
+		return err
+	}
+	return err2
 }
 
 const MB = 1024 * 1024
@@ -48,7 +85,7 @@ func createDiskImage(partitionMB int, outputPath string, volumeLabel string, inc
 	// create a partition table
 	table := &mbr.Table{
 		Partitions: []*mbr.Partition{
-			{Start: FATPartitionSTart, Size: uint32(partitionSectors), Type: mbr.Fat32LBA, Bootable: true},
+			{Start: FATPartitionSTart, Size: uint32(partitionSectors), Type: mbr.EFISystem, Bootable: true},
 		},
 	}
 	err = myDisk.Partition(table)
