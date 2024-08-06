@@ -156,22 +156,35 @@ func copyDir(prefix string, path string, fs filesystem.FileSystem) error {
 
 func copyFile(src string, dst string, fs filesystem.FileSystem) error {
 	file, err := os.Open(src)
-	fmt.Printf("Copying %s -> %s \n", src, dst)
+	if err != nil {
+		return fmt.Errorf("error opening file '%s': %s\n", src, err.Error())
+	}
+	defer file.Close()
 	rw, err := fs.OpenFile(dst, os.O_CREATE|os.O_RDWR)
 	if err != nil {
 		return fmt.Errorf("error writing output file '%s': %s\n", dst, err.Error())
 	}
-	// Copy file but with a much larger buffer than 32kb default, the rootfs is > 100mb, this makes a huge
-	// improvement (for a 150Mb rootfs it was 30s total vs 1s with the larger buffer).
-	buf := make([]byte, 1048576)
-	_, err = io.CopyBuffer(rw, file, buf)
+	// Make the buffer the same size as the file so that the fat32 file can see how many clusters
+	// to allocate, otherwise it will re-allocate the cluster chain size/len(buf) times.
+	// See https://github.com/diskfs/go-diskfs/issues/130
+	// For very large files (ie 512M) it takes several minutes, versus loading the entire file into ram takes 1s or less.
+	// This is temporary until the above issue can be addressed better ie FileSystem.Truncate(name,size).
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("error getting file info for '%s': %s\n", dst, err.Error())
+	}
+	fmt.Printf("Copying %s -> %s (%d bytes)\n", src, dst, info.Size())
+	buf, err := io.ReadAll(file)
+	n, err := rw.Write(buf)
 	if err != nil {
 		return err
+	}
+	if n != int(info.Size()) {
+		return fmt.Errorf("error writing output file '%s': %d bytes written, s/b %d\n", dst, n, info.Size())
 	}
 	err = rw.Close()
 	if err != nil {
 		return err
 	}
-	file.Close()
 	return nil
 }
