@@ -6,6 +6,7 @@ toolchain go1.22.5
 
 require (
 	github.com/diskfs/go-diskfs v1.4.1
+	github.com/dustin/go-humanize v1.0.1
 	github.com/klauspost/pgzip v1.2.6
 )
 

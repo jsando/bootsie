@@ -12,3 +12,12 @@ qemu-system-x86_64 -m 512m \
 -drive if=pflash,format=raw,file=/opt/homebrew/Cellar/qemu/8.1.3/share/qemu/edk2-x86_64-code.fd \
 -drive format=raw,file=disk.img,if=ide,media=disk -serial stdio
 ```
+
+TODO:
+- Add error if same file or folder names but different case (/efi vs /EFI)
+- Fix cli to have short and long form and proper help
+- Don't require path to have trailing slash
+- Add option to specify GPT or MBR
+  - MBR allows to trim to only data size written, GPT appears to write a backup table at the end of the device?
+- [x] If doing -gzip delete the disk.img once the gzip is created
+- [x] Option to truncate disk.img to just data space
