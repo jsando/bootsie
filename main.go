@@ -16,13 +16,44 @@ import (
 )
 
 func main() {
-	outputPath := flag.String("output", "disk.img", "output path")
-	partitionMB := flag.Int("size", 1024, "partition size in megabytes")
-	label := flag.String("label", "boot", "volume label")
 	force := flag.Bool("force", false, "force overwrite if output path exists")
-	doGzip := flag.Bool("gzip", false, "compress output file with gzip")
-	doTruncate := flag.Bool("truncate", false, "truncate disk image before compressing")
+	doGzip := flag.Bool("gzip", false, "compress output file with gzip (automatic if output ends with '.gz')")
+	label := flag.String("label", "boot", "volume label")
+	outputPath := flag.String("output", "", "output path (required)")
+	partitionMB := flag.Int("size", 1024, "partition size in megabytes")
+	doTruncate := flag.Bool("trim", false, "trim disk image before compressing (truncate zero-filled sectors at the end)")
+
+	// Add a custom flag usage to show that a list of paths are the final parameter
+	flag.Usage = func() {
+		const instruction string = `
+Build a disk image with an EFI partition.
+The contents of the partition are specified as a list of one or more paths.
+Folders are copied recursively, and include the folder name itself
+unless it ends with a trailing '/'.
+
+`
+		fmt.Fprintf(os.Stderr, instruction)
+		fmt.Fprintf(os.Stderr, "Usage: %s [options] <path> [<path> ...]\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
+
+	// Must specify output path
+	if *outputPath == "" {
+		fmt.Fprintf(os.Stderr, "Output path is required\n")
+		os.Exit(1)
+	}
+
+	// Ensure at least one valid path is given as an argument
+	if len(flag.Args()) == 0 {
+		fmt.Fprintf(os.Stderr, "At least one valid path is required\n")
+		os.Exit(1)
+	}
+
+	// if outputPath ends with ".gz" then automatically turn on the doGzip flag
+	if strings.HasSuffix(*outputPath, ".gz") {
+		*doGzip = true
+	}
 
 	// Delete the output file if it exists already and -force was specified
 	if _, err := os.Stat(*outputPath); err == nil {
@@ -33,8 +64,17 @@ func main() {
 		os.Remove(*outputPath)
 	}
 
+	// Generate a unique temporary file in the same folder as *outputPath
+	tempFile, err := os.CreateTemp(filepath.Dir(*outputPath), "disk.img.")
+	tempFileName := tempFile.Name()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating temporary file: %s\n", err.Error())
+		os.Exit(1)
+	}
+	os.Remove(tempFileName)
+
 	// Package everything into an EFI partition
-	err := createDiskImage(*partitionMB, *outputPath, *label, flag.Args())
+	err = createDiskImage(*partitionMB, tempFileName, *label, flag.Args())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating disk image: %s\n", err.Error())
 		os.Exit(1)
@@ -43,12 +83,12 @@ func main() {
 	// Truncate?
 	if *doTruncate {
 		fmt.Printf("Truncating disk image ... ")
-		trimSize, err := trimFile(*outputPath)
+		trimSize, err := trimFile(tempFileName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error finding trimmed file size: %s\n", err.Error())
 			os.Exit(1)
 		}
-		err = os.Truncate(*outputPath, trimSize)
+		err = os.Truncate(tempFileName, trimSize)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error truncating disk image: %s\n", err.Error())
 			os.Exit(1)
@@ -59,14 +99,17 @@ func main() {
 	// Optionally compress the output
 	if *doGzip {
 		fmt.Fprintf(os.Stderr, "Compressing %s ... \n", *outputPath)
-		err = compressOutput(outputPath)
+		err = compressOutput(tempFileName, *outputPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error compressing output: %s\n", err.Error())
 			os.Exit(1)
 		}
-		err = os.Remove(*outputPath)
+	} else {
+		// just rename temp file to outputfile
+		err = os.Rename(tempFileName, *outputPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error removing %s: %s\n", *outputPath, err.Error())
+			fmt.Fprintf(os.Stderr, "Error renaming disk image: %s\n", err.Error())
+			os.Exit(1)
 		}
 	}
 }
@@ -117,18 +160,21 @@ scanLoop:
 	return trimSize, nil
 }
 
-func compressOutput(outputPath *string) error {
-	gzipFilename := fmt.Sprintf("%s.gz", *outputPath)
-	gzipFile, err := os.Create(gzipFilename)
+func compressOutput(inputFileName string, outputFileName string) error {
+	gzipFile, err := os.Create(outputFileName)
 	if err != nil {
 		panic(err)
 	}
-	reader, err := os.Open(*outputPath)
+	reader, err := os.Open(inputFileName)
 	defer reader.Close()
 	w := gzip.NewWriter(gzipFile)
 	//w.SetConcurrency(100000, 10)
 	_, err = io.Copy(w, reader)
 	err2 := w.Close()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(inputFileName)
 	if err != nil {
 		return err
 	}

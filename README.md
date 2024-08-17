@@ -14,9 +14,8 @@ qemu-system-x86_64 -m 512m \
 ```
 
 TODO:
+- [x] Output option is incorrect when using gzip
 - Add error if same file or folder names but different case (/efi vs /EFI)
-- Fix cli to have short and long form and proper help
-- Don't require path to have trailing slash
 - Add option to specify GPT or MBR
   - MBR allows to trim to only data size written, GPT appears to write a backup table at the end of the device?
 - [x] If doing -gzip delete the disk.img once the gzip is created
