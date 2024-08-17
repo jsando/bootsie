@@ -1,5 +1,6 @@
-/disk.img
 /bootsie
 /.idea
 dist/
 .DS_Store
+*.img
+*.gz
