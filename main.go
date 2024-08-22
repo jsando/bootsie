@@ -21,10 +21,11 @@ func main() {
 func executeSubcommand(args []string) error {
 	cmds := []Runner{
 		NewCreateCommand(),
+		NewCopyCommand(),
 		NewListCommand(),
 	}
 	if len(args) < 1 {
-		return errors.New("specify a subcommand: 'create', 'list', or 'extract'")
+		return errors.New("specify a subcommand: 'create', 'ls', or 'cp'")
 	}
 	subcommand := os.Args[1]
 	for _, cmd := range cmds {

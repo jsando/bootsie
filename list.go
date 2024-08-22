@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/diskfs/go-diskfs"
 	"github.com/diskfs/go-diskfs/filesystem"
+	"github.com/dustin/go-humanize"
 	gzip "github.com/klauspost/pgzip"
 	"io"
 	"os"
@@ -14,17 +15,17 @@ import (
 type ListCommand struct {
 	fs        *flag.FlagSet
 	imageFile string
-	longForm  bool
+	long      bool
 }
 
 func NewListCommand() *ListCommand {
 	c := &ListCommand{
-		fs: flag.NewFlagSet("list", flag.ExitOnError),
+		fs: flag.NewFlagSet("ls", flag.ExitOnError),
 	}
-	c.fs.BoolVar(&c.longForm, "long", false, "List file attributes similar to ls -l")
+	c.fs.BoolVar(&c.long, "long", false, "like ls -l, show file size and mod timestamp")
 	c.fs.Usage = func() {
 		const instruction string = `
-List EFI partition contents, recursively
+List first partition contents, recursively
 
 `
 		fmt.Fprintf(os.Stderr, instruction)
@@ -94,7 +95,15 @@ func (c *ListCommand) listDir(fs filesystem.FileSystem, path string) error {
 			continue
 		}
 		absPath := filepath.Join(path, file.Name())
-		fmt.Printf("%s\n", absPath)
+		if c.long {
+			// [4.0K  ] Dec 31 1979 EFI/
+			fmt.Printf("[%6s]  %s  %s\n",
+				humanize.Bytes(uint64(file.Size())),
+				file.ModTime().Format("Jan _2 2006"),
+				absPath)
+		} else {
+			fmt.Printf("%s\n", absPath)
+		}
 		if file.IsDir() {
 			err = c.listDir(fs, absPath)
 			if err != nil {
