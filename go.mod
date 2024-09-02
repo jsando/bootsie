@@ -1,4 +1,4 @@
-module github.com/jsando/bootsie
+module github.com/jsando/fatimg
 
 go 1.21
 
@@ -9,6 +9,8 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/klauspost/pgzip v1.2.6
 )
+
+replace github.com/diskfs/go-diskfs v1.4.1 => github.com/jsando/go-diskfs v0.0.0-20240831005111-5997b71b4caf
 
 require (
 	github.com/djherbis/times v1.6.0 // indirect
